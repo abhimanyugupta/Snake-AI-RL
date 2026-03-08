@@ -1,38 +1,29 @@
 # Snake AI with Reinforcement Learning
 
-This is a beginner-friendly starter project for building a Snake AI.
+This is a beginner-friendly starter project for learning reinforcement learning through Snake.
 
-It includes:
-- A playable Snake game made with `pygame`
-- A simple tabular Q-learning agent
-- A training script that teaches the agent over many games
+Important note:
+- The current agent is **not** a neural network.
+- It uses **tabular Q-learning**, which means it stores values in a Python dictionary called a Q-table.
+- That makes it easier to understand the basics before moving to deep RL.
 
 ## Project Files
 
-- `snake_game.py` - the game logic and manual playable version
-- `agent.py` - the Q-learning agent
-- `train.py` - the training loop
+- `snake_game.py` - the Snake game, board rendering, overlays, and dashboard drawing
+- `agent.py` - the tabular Q-learning agent and state/Q-value helpers
+- `train.py` - the live training loop with sliders, toggles, and graph
 - `requirements.txt` - project dependency list
 - `README.md` - setup and usage notes
 
 ## Setup
 
-1. Create a virtual environment (optional but recommended):
-
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
-```
-
-2. Install dependencies:
-
-```powershell
 pip install -r requirements.txt
 ```
 
 ## Play the Game Yourself
-
-Run:
 
 ```powershell
 python snake_game.py
@@ -45,39 +36,78 @@ Controls:
 
 ## Train the Agent
 
-Run:
-
 ```powershell
 python train.py --episodes 300
 ```
 
-This will:
-- Play 300 training games
-- Save the learned table to `q_table.pkl`
-- Print the score for each episode
+The training dashboard now shows:
+- the snake moving in real time
+- score, game number, epsilon, reward, and known states
+- the current action and whether it came from exploration or exploitation
+- the current Q-values for straight, right, and left
+- the 11-bit state representation the agent uses
+- danger squares that would cause death
+- colored action arrows on the board
+- a live score / moving-average learning graph
+- live reward sliders so you can change the reward function while training
 
-If you want to watch the training:
+## Dashboard Controls
+
+Mouse controls:
+- Drag the `Training speed` slider to move between slow and fast modes
+- Drag the reward sliders to change `food`, `death`, and `step` rewards
+- Click toggle buttons to turn overlays on or off
+
+Keyboard shortcuts:
+- `Space` - pause or resume training
+- `A` - toggle action arrows
+- `D` - toggle danger squares
+- `G` - toggle the learning graph
+- `1` - slow mode
+- `2` - medium mode
+- `3` - fast mode
+
+## What the State Means
+
+The agent does **not** see the whole board like a human.
+It only sees 11 binary features:
+
+1. danger straight
+2. danger right
+3. danger left
+4. moving left
+5. moving right
+6. moving up
+7. moving down
+8. food left
+9. food right
+10. food up
+11. food down
+
+So when the dashboard says `Food L/R/U/D: 0 / 1 / 0 / 1`, it means the food is to the right and below the snake head.
+
+## Why This Helps Learning
+
+This project is meant to make the RL loop visible:
+- **State**: what the agent knows right now
+- **Action**: which move it picks
+- **Reward**: what feedback it gets after that move
+- **Q-value**: how good it currently believes each move is
+- **Exploration vs exploitation**: whether it is trying something random or using what it already learned
+
+## Useful Options
 
 ```powershell
-python train.py --episodes 100 --watch
+python train.py --episodes 100 --resume
+python train.py --episodes 100 --speed 20 --delay-ms 40
+python train.py --episodes 100 --no-render
 ```
-
-## How the Agent Works
-
-This starter uses tabular Q-learning instead of a neural network.
-
-That means the agent:
-- Looks at a small set of game facts, such as danger and food direction
-- Chooses between 3 actions: go straight, turn right, or turn left
-- Updates a Q-table based on rewards
-
-This is a great first step because it is easier to understand than deep reinforcement learning.
 
 ## Good Next Steps
 
-Once this project is working for you, you can extend it by:
-- plotting training scores
-- saving the best model separately
-- adding a neural network with PyTorch
-- improving the reward system
-- increasing the state information the agent can see
+Once you are comfortable with this version, useful next steps are:
+- add a button to reset the Q-table from the UI
+- save separate reward presets
+- compare different epsilon schedules
+- add plots for average reward per step
+- replace the Q-table with a neural network using PyTorch

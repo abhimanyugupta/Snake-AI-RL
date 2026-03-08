@@ -9,8 +9,24 @@ class QLearningAgent:
     """
     Small tabular Q-learning agent.
 
-    This is a friendly starting point before moving to a neural network.
+    This project currently uses a Q-table dictionary, not a neural network.
     """
+
+    ACTION_KEYS = ["straight", "right", "left"]
+    ACTION_LABELS = ["Straight", "Right turn", "Left turn"]
+    STATE_LABELS = [
+        ("danger_straight", "Danger straight"),
+        ("danger_right", "Danger right"),
+        ("danger_left", "Danger left"),
+        ("moving_left", "Moving left"),
+        ("moving_right", "Moving right"),
+        ("moving_up", "Moving up"),
+        ("moving_down", "Moving down"),
+        ("food_left", "Food is left"),
+        ("food_right", "Food is right"),
+        ("food_up", "Food is up"),
+        ("food_down", "Food is down"),
+    ]
 
     def __init__(
         self,
@@ -48,7 +64,7 @@ class QLearningAgent:
         point_right = self._next_point(head, self._turn_right(direction), block)
         point_left = self._next_point(head, self._turn_left(direction), block)
 
-        state = (
+        return (
             int(game.is_collision(point_straight)),
             int(game.is_collision(point_right)),
             int(game.is_collision(point_left)),
@@ -62,21 +78,58 @@ class QLearningAgent:
             int(game.food.y > game.head.y),
         )
 
-        return state
-
     def get_action(self, state):
-        """Pick a random action sometimes, otherwise use the best known move."""
+        return self.get_action_details(state)["action"]
+
+    def get_action_details(self, state):
+        """Return the chosen action and the values behind that choice."""
+        q_values = self.get_q_values(state)
+
         if random.random() < self.epsilon:
             action_index = random.randint(0, 2)
+            decision_type = "explore"
         else:
-            q_values = self.q_table[state]
             best_value = max(q_values)
             best_actions = [
                 index for index, value in enumerate(q_values) if value == best_value
             ]
             action_index = random.choice(best_actions)
+            decision_type = "exploit"
 
-        return self.index_to_action(action_index)
+        return self._build_action_details(action_index, q_values, decision_type)
+
+    def get_policy_preview(self, state):
+        """Preview the best-known action without using randomness."""
+        q_values = self.get_q_values(state)
+        best_value = max(q_values)
+        best_actions = [index for index, value in enumerate(q_values) if value == best_value]
+        action_index = best_actions[0]
+        return self._build_action_details(action_index, q_values, "policy preview")
+
+    def get_q_values(self, state):
+        return list(self.q_table[state])
+
+    def describe_state(self, state):
+        return [
+            {"key": key, "label": label, "value": value}
+            for (key, label), value in zip(self.STATE_LABELS, state)
+        ]
+
+    def explain_food_view(self, state):
+        parts = []
+        if state[7]:
+            parts.append("left")
+        if state[8]:
+            parts.append("right")
+        if state[9]:
+            parts.append("up")
+        if state[10]:
+            parts.append("down")
+
+        if not parts:
+            return "Food is aligned with the snake head on at least one axis."
+
+        return "Food is " + " and ".join(parts) + " of the head."
 
     def train_step(self, state, action_index, reward, next_state, done):
         """Classic Q-learning update."""
@@ -117,6 +170,16 @@ class QLearningAgent:
         self.q_table = defaultdict(lambda: [0.0, 0.0, 0.0], data["q_table"])
         self.epsilon = data.get("epsilon", self.epsilon)
         self.n_games = data.get("n_games", 0)
+
+    def _build_action_details(self, action_index, q_values, decision_type):
+        return {
+            "action": self.index_to_action(action_index),
+            "action_index": action_index,
+            "action_key": self.ACTION_KEYS[action_index],
+            "action_label": self.ACTION_LABELS[action_index],
+            "decision_type": decision_type,
+            "q_values": list(q_values),
+        }
 
     def _next_point(self, head, direction, block_size):
         if direction == Direction.RIGHT:
