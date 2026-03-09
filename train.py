@@ -509,7 +509,7 @@ class TrainingDashboard:
         }
 
 
-def hold_training_window_open(game):
+def hold_training_window_open(game, dashboard):
     """Keep the final dashboard visible until the user closes it."""
     pygame.event.clear()  # flush stale events from training
     final_view = dict(game.dashboard_data)
@@ -529,6 +529,15 @@ def hold_training_window_open(game):
                 pygame.K_ESCAPE,
             ):
                 return
+
+        # Process dashboard events so graph zoom/pan/hover works
+        dashboard.sync_graph_rect(game)
+        dashboard.handle_events(events)
+
+        # Update graph viewport data in the dashboard_data
+        game.dashboard_data["graph_view_end"] = dashboard.graph_view_end
+        game.dashboard_data["graph_view_size"] = dashboard.graph_view_size
+        game.dashboard_data["graph_hover_index"] = dashboard.graph_hover_index
 
         game.draw()
         pygame.time.delay(30)
@@ -681,7 +690,7 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
     finally:
         agent.save(model_path)
         if render and training_completed and dashboard.keep_open_toggle.value:
-            hold_training_window_open(game)
+            hold_training_window_open(game, dashboard)
         game.close()
 
     print(f"Training finished. Model saved to {model_path}")
