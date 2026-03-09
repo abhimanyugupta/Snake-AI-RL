@@ -533,6 +533,8 @@ class SnakeGameAI:
         # Graph
         graph_h = 240
         graph_rect = pygame.Rect(right_col.x, right_col.y, right_col.width, graph_h)
+        # Store graph rect back into data so the dashboard can use it for mouse events
+        data["_graph_rect"] = graph_rect
         self._draw_graph(graph_rect, data)
         
         right_col.y += graph_h + 15
@@ -686,31 +688,94 @@ class SnakeGameAI:
         title = self.tiny_font.render("Learning Graph: Score & Moving Avg", True, (250, 252, 255))
         self.display.blit(title, (rect.x + 12, rect.y + 12))
 
-        scores = data.get("graph_scores", [])
-        averages = data.get("graph_averages", [])
-        if len(scores) < 2:
+        all_scores = data.get("graph_scores", [])
+        all_averages = data.get("graph_averages", [])
+        total = len(all_scores)
+
+        if total < 2:
             no_data = self.tiny_font.render("Waiting for data...", True, (120, 125, 135))
             self.display.blit(no_data, (rect.x + 12, rect.y + 40))
             return
 
-        plot_rect = pygame.Rect(rect.x + 15, rect.y + 35, rect.width - 30, rect.height - 50)
-        
+        # Compute visible window from viewport state
+        view_size = data.get("graph_view_size", 60)
+        view_end = data.get("graph_view_end")
+        if view_end is None:
+            view_end = total
+        view_start = max(0, view_end - view_size)
+        view_end = min(total, view_start + view_size)
+
+        scores = all_scores[view_start:view_end]
+        averages = all_averages[view_start:view_end]
+
+        # Plot area
+        plot_rect = pygame.Rect(rect.x + 15, rect.y + 35, rect.width - 30, rect.height - 65)
+
         # Plot area background
         pygame.draw.rect(self.display, (20, 22, 26), plot_rect, border_radius=4)
         pygame.draw.rect(self.display, (40, 42, 48), plot_rect, width=1, border_radius=4)
-        
+
         # Baseline
         pygame.draw.line(
-            self.display,
-            (60, 65, 75),
-            (plot_rect.x, plot_rect.bottom),
-            (plot_rect.right, plot_rect.bottom),
-            1,
+            self.display, (60, 65, 75),
+            (plot_rect.x, plot_rect.bottom), (plot_rect.right, plot_rect.bottom), 1,
         )
 
-        max_value = max(max(scores), max(averages), 1)
-        self._draw_graph_line(plot_rect, scores, max_value, (80, 190, 255), thickness=2)
-        self._draw_graph_line(plot_rect, averages, max_value, (80, 230, 120), thickness=3)
+        if len(scores) >= 2:
+            max_value = max(max(scores), max(averages), 1)
+            self._draw_graph_line(plot_rect, scores, max_value, (80, 190, 255), thickness=2)
+            self._draw_graph_line(plot_rect, averages, max_value, (80, 230, 120), thickness=3)
+
+            # --- Hover tooltip / crosshair ---
+            hover_idx = data.get("graph_hover_index")
+            if hover_idx is not None and view_start <= hover_idx < view_end:
+                local_idx = hover_idx - view_start
+                n = len(scores)
+                px = plot_rect.x + int(local_idx / max(1, n - 1) * plot_rect.width)
+                # Vertical crosshair line
+                pygame.draw.line(self.display, (255, 255, 255, 120), (px, plot_rect.y), (px, plot_rect.bottom), 1)
+
+                # Score dot
+                score_val = scores[local_idx]
+                score_y = plot_rect.bottom - int(score_val / max_value * plot_rect.height)
+                score_y = max(plot_rect.top, min(plot_rect.bottom, score_y))
+                pygame.draw.circle(self.display, (80, 190, 255), (px, score_y), 4)
+
+                # Average dot
+                avg_val = averages[local_idx]
+                avg_y = plot_rect.bottom - int(avg_val / max_value * plot_rect.height)
+                avg_y = max(plot_rect.top, min(plot_rect.bottom, avg_y))
+                pygame.draw.circle(self.display, (80, 230, 120), (px, avg_y), 4)
+
+                # Tooltip box
+                run_num = hover_idx + 1
+                tip_text = f"Run {run_num}  Score: {score_val}  Avg: {avg_val:.1f}"
+                tip_surf = self.tiny_font.render(tip_text, True, (250, 252, 255))
+                tip_w = tip_surf.get_width() + 12
+                tip_h = tip_surf.get_height() + 6
+                tip_x = min(px + 8, plot_rect.right - tip_w)
+                tip_y = max(plot_rect.y, score_y - tip_h - 6)
+                tip_rect = pygame.Rect(tip_x, tip_y, tip_w, tip_h)
+                pygame.draw.rect(self.display, (35, 38, 48), tip_rect, border_radius=4)
+                pygame.draw.rect(self.display, (100, 110, 130), tip_rect, width=1, border_radius=4)
+                self.display.blit(tip_surf, (tip_x + 6, tip_y + 3))
+
+        # --- Scroll position bar at the bottom ---
+        bar_y = rect.bottom - 18
+        bar_rect = pygame.Rect(rect.x + 15, bar_y, rect.width - 30, 8)
+        pygame.draw.rect(self.display, (30, 32, 38), bar_rect, border_radius=4)
+
+        if total > view_size:
+            thumb_ratio = view_size / total
+            thumb_w = max(12, int(bar_rect.width * thumb_ratio))
+            thumb_x = bar_rect.x + int((view_start / total) * bar_rect.width)
+            thumb_rect = pygame.Rect(thumb_x, bar_y, thumb_w, 8)
+            pygame.draw.rect(self.display, (80, 190, 255), thumb_rect, border_radius=4)
+
+        # Range label
+        range_text = f"Runs {view_start + 1}-{view_end} of {total}"
+        range_surf = self.tiny_font.render(range_text, True, (140, 145, 155))
+        self.display.blit(range_surf, (rect.right - 15 - range_surf.get_width(), rect.y + 12))
 
     def _draw_graph_line(self, rect, values, max_value, color, thickness=2):
         if len(values) < 2:

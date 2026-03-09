@@ -222,6 +222,15 @@ class TrainingDashboard:
         self.score_history = []
         self.average_history = []
 
+        # Interactive graph viewport state
+        self.graph_view_end = None   # None = follow latest (auto-scroll)
+        self.graph_view_size = 60    # Number of runs visible at once
+        self.graph_drag_active = False
+        self.graph_drag_start_x = 0
+        self.graph_drag_start_end = 0
+        self.graph_hover_index = None  # Index into full history being hovered
+        self.graph_rect = None  # Set by the renderer so events know the bounds
+
     @property
     def current_fps(self):
         if self.turbo_toggle.value:
@@ -273,6 +282,12 @@ class TrainingDashboard:
         delay_ratio = 1.0 - max(0.0, min(1.0, delay_ms / 140 if delay_ms else 0.0))
         return round((speed_ratio + delay_ratio) / 2, 2)
 
+    def sync_graph_rect(self, game):
+        """Read back the graph rect that the renderer stored in the data dict."""
+        data = game.dashboard_data
+        if data and "_graph_rect" in data:
+            self.graph_rect = data["_graph_rect"]
+
     def handle_events(self, events):
         for event in events:
             consumed_by_input = False
@@ -282,6 +297,10 @@ class TrainingDashboard:
                     break
 
             if consumed_by_input:
+                continue
+
+            # Graph interaction (zoom/pan/hover)
+            if self._handle_graph_event(event):
                 continue
 
             if event.type == pygame.KEYDOWN:
@@ -294,6 +313,73 @@ class TrainingDashboard:
                 for toggle in self.toggles:
                     if toggle.handle_event(event):
                         break
+
+    def _handle_graph_event(self, event):
+        """Handle zoom, pan, and hover for the interactive graph."""
+        gr = self.graph_rect
+        if gr is None:
+            return False
+
+        total = len(self.score_history)
+        if total < 2:
+            return False
+
+        if event.type == pygame.MOUSEWHEEL:
+            mx, my = pygame.mouse.get_pos()
+            if gr.collidepoint(mx, my):
+                # Zoom: shrink or grow view_size
+                zoom_delta = -event.y * max(2, self.graph_view_size // 8)
+                new_size = max(10, min(total, self.graph_view_size + zoom_delta))
+                self.graph_view_size = new_size
+                # Clamp view_end
+                if self.graph_view_end is not None:
+                    self.graph_view_end = min(total, max(new_size, self.graph_view_end))
+                return True
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if gr.collidepoint(event.pos):
+                self.graph_drag_active = True
+                self.graph_drag_start_x = event.pos[0]
+                view_end = self.graph_view_end if self.graph_view_end is not None else total
+                self.graph_drag_start_end = view_end
+                return True
+
+        if event.type == pygame.MOUSEMOTION:
+            # Hover tooltip
+            if gr.collidepoint(event.pos) and not self.graph_drag_active:
+                plot_x = gr.x + 15
+                plot_w = gr.width - 30
+                if plot_w > 0:
+                    view_end = self.graph_view_end if self.graph_view_end is not None else total
+                    view_start = max(0, view_end - self.graph_view_size)
+                    n_visible = view_end - view_start
+                    rel_x = event.pos[0] - plot_x
+                    idx = view_start + int(rel_x / plot_w * n_visible)
+                    idx = max(view_start, min(view_end - 1, idx))
+                    self.graph_hover_index = idx
+            elif not self.graph_drag_active:
+                self.graph_hover_index = None
+
+            # Drag to pan
+            if self.graph_drag_active:
+                dx_pixels = event.pos[0] - self.graph_drag_start_x
+                plot_w = gr.width - 30
+                if plot_w > 0:
+                    runs_per_pixel = self.graph_view_size / plot_w
+                    delta_runs = int(-dx_pixels * runs_per_pixel)
+                    new_end = self.graph_drag_start_end + delta_runs
+                    new_end = max(self.graph_view_size, min(total, new_end))
+                    self.graph_view_end = new_end
+                return True
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.graph_drag_active:
+            self.graph_drag_active = False
+            # If dragged to the very end, re-enable auto-follow
+            if self.graph_view_end is not None and self.graph_view_end >= total:
+                self.graph_view_end = None
+            return True
+
+        return False
 
     def _handle_shortcuts(self, key):
         if key == pygame.K_SPACE:
@@ -401,8 +487,11 @@ class TrainingDashboard:
                 "1/2/3 = slow/med/fast, 4/T = turbo.",
                 "K keeps window open after training.",
             ],
-            "graph_scores": self.score_history[-60:],
-            "graph_averages": self.average_history[-60:],
+            "graph_scores": self.score_history,
+            "graph_averages": self.average_history,
+            "graph_view_end": self.graph_view_end,
+            "graph_view_size": self.graph_view_size,
+            "graph_hover_index": self.graph_hover_index,
         }
 
 
@@ -465,6 +554,7 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
             while True:
                 episode_goal = dashboard.get_episode_goal()
                 events = pygame.event.get() if render else []
+                dashboard.sync_graph_rect(game)
                 dashboard.handle_events(events)
                 game.handle_system_events(events)
 
