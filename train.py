@@ -199,7 +199,8 @@ class TrainingDashboard:
         self.episode_input = TextInputControl("Episode goal", initial_episode_goal, col_x + toggle_w + 10, y, toggle_w, 30)
         
         y += 38
-        self.keep_open_toggle = ToggleControl("Keep open [K]", True, col_x, y, col_w, 28)
+        self.keep_open_toggle = ToggleControl("Keep open [K]", True, col_x, y, toggle_w, 28)
+        self.headless_toggle = ToggleControl("Headless [H]", False, col_x + toggle_w + 10, y, toggle_w, 28)
 
         self.sliders = [
             self.speed_slider,
@@ -214,6 +215,7 @@ class TrainingDashboard:
             self.pause_toggle,
             self.turbo_toggle,
             self.keep_open_toggle,
+            self.headless_toggle,
         ]
         self.inputs = [self.episode_input]
 
@@ -273,6 +275,8 @@ class TrainingDashboard:
         return self.episode_input.get_int(default=self.initial_episode_goal)
 
     def should_draw_frame(self, step_number, force=False):
+        if self.headless_toggle.value:
+            return False
         if force or not self.turbo_toggle.value:
             return True
         return step_number <= 1 or (step_number % self.render_every_n_steps == 0)
@@ -396,6 +400,8 @@ class TrainingDashboard:
             self.turbo_toggle.toggle()
         elif key == pygame.K_k:
             self.keep_open_toggle.toggle()
+        elif key == pygame.K_h:
+            self.headless_toggle.toggle()
         elif key == pygame.K_1:
             self.turbo_toggle.value = False
             self.speed_slider.set_normalized(0.15)
@@ -573,6 +579,9 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                 game.set_reward_config(dashboard.reward_config)
 
                 if dashboard.pause_toggle.value:
+                    if dashboard.headless_toggle.value:
+                        pygame.time.delay(5)  # minimal delay to keep events flowing
+                        continue
                     preview = agent.get_policy_preview(state)
                     game.set_dashboard_data(
                         dashboard.build_dashboard_data(
@@ -624,7 +633,7 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                 )
                 state = next_state
 
-                if render and game_over:
+                if render and game_over and not dashboard.headless_toggle.value:
                     final_view = dashboard.build_dashboard_data(
                         agent=agent,
                         game=game,
