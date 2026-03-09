@@ -327,9 +327,11 @@ class TrainingDashboard:
         if event.type == pygame.MOUSEWHEEL:
             mx, my = pygame.mouse.get_pos()
             if gr.collidepoint(mx, my):
-                # Zoom: shrink or grow view_size
-                zoom_delta = -event.y * max(2, self.graph_view_size // 8)
-                new_size = max(10, min(total, self.graph_view_size + zoom_delta))
+                # Multiplicative zoom: ~1.4x per scroll tick (fast for large datasets)
+                if event.y > 0:  # scroll up = zoom in
+                    new_size = max(10, int(self.graph_view_size / 1.4))
+                else:  # scroll down = zoom out
+                    new_size = min(total, int(self.graph_view_size * 1.4))
                 self.graph_view_size = new_size
                 # Clamp view_end
                 if self.graph_view_end is not None:
@@ -406,6 +408,12 @@ class TrainingDashboard:
         elif key == pygame.K_4:
             self.turbo_toggle.value = True
             self.speed_slider.set_normalized(1.0)
+        elif key == pygame.K_f:
+            # Fit all: zoom out to show entire training history
+            total = len(self.score_history)
+            if total > 0:
+                self.graph_view_size = total
+                self.graph_view_end = None  # auto-follow
 
     def record_score(self, score):
         self.score_history.append(score)
