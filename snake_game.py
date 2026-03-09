@@ -30,6 +30,7 @@ class SnakeGameAI:
         speed=12,
         render=True,
         sidebar_width=360,
+        window_h=None,
     ):
         pygame.init()
 
@@ -41,8 +42,9 @@ class SnakeGameAI:
         self.speed = speed
         self.render = render
         self.sidebar_width = sidebar_width if render else 0
+        requested_window_h = window_h if window_h is not None else self.board_h
         self.window_w = self.board_w + self.sidebar_width
-        self.window_h = self.board_h
+        self.window_h = max(self.board_h, requested_window_h)
         self.quit_requested = False
         self.dashboard_data = {}
         self.reward_config = {"food": 10.0, "death": -10.0, "step": 0.0}
@@ -379,9 +381,9 @@ class SnakeGameAI:
 
         data = self.dashboard_data
         panel_x = self.board_w
-        panel_rect = pygame.Rect(panel_x, 0, self.sidebar_width, self.board_h)
+        panel_rect = pygame.Rect(panel_x, 0, self.sidebar_width, self.window_h)
         pygame.draw.rect(self.display, (27, 27, 31), panel_rect)
-        pygame.draw.line(self.display, (70, 70, 80), (panel_x, 0), (panel_x, self.board_h), 2)
+        pygame.draw.line(self.display, (70, 70, 80), (panel_x, 0), (panel_x, self.window_h), 2)
 
         title = data.get("panel_title", "Snake Dashboard")
         title_surface = self.title_font.render(title, True, (245, 245, 245))
@@ -409,9 +411,9 @@ class SnakeGameAI:
         self._draw_controls(panel_x + 18, data)
         if data.get("q_values") is not None:
             self._draw_q_values(panel_x + 18, data)
+        self._draw_graph(panel_x + 18, data)
         if data.get("state_lines"):
             self._draw_state_block(panel_x + 18, data)
-        self._draw_graph(panel_x + 18, data)
 
     def _draw_controls(self, panel_x, data):
         for slider in data.get("sliders", []):
@@ -445,6 +447,21 @@ class SnakeGameAI:
 
             label_surface = self.tiny_font.render(toggle["label"], True, (245, 245, 245))
             self.display.blit(label_surface, (rect.x + 8, rect.y + 6))
+
+        for input_box in data.get("inputs", []):
+            label_surface = self.tiny_font.render(input_box["label"], True, (235, 235, 235))
+            self.display.blit(label_surface, (input_box["x"], input_box["y"] - 18))
+
+            rect = pygame.Rect(input_box["x"], input_box["y"], input_box["w"], input_box["h"])
+            fill_color = (42, 46, 58) if input_box.get("active") else (30, 33, 41)
+            border_color = (100, 210, 255) if input_box.get("active") else (85, 85, 95)
+            pygame.draw.rect(self.display, fill_color, rect, border_radius=8)
+            pygame.draw.rect(self.display, border_color, rect, width=2, border_radius=8)
+
+            value_text = input_box.get("text") or input_box.get("hint", "")
+            value_color = (245, 245, 245) if input_box.get("text") else (140, 140, 150)
+            value_surface = self.small_font.render(value_text, True, value_color)
+            self.display.blit(value_surface, (rect.x + 8, rect.y + 5))
 
     def _draw_q_values(self, panel_x, data):
         y = data.get("q_values_y", 350)
@@ -498,7 +515,7 @@ class SnakeGameAI:
         if not data.get("show_graph"):
             return
 
-        graph_y = data.get("graph_y", self.board_h - 110)
+        graph_y = data.get("graph_y", self.window_h - 110)
         graph_h = data.get("graph_h", 90)
         graph_rect = pygame.Rect(panel_x, graph_y, self.sidebar_width - 36, graph_h)
         pygame.draw.rect(self.display, (34, 34, 40), graph_rect, border_radius=10)
@@ -631,6 +648,7 @@ def run_human_game():
 
 if __name__ == "__main__":
     run_human_game()
+
 
 
 

@@ -11,7 +11,7 @@ Important note:
 
 - `snake_game.py` - the Snake game, board rendering, overlays, and dashboard drawing
 - `agent.py` - the tabular Q-learning agent and state/Q-value helpers
-- `train.py` - the live training loop with sliders, toggles, and graph
+- `train.py` - the live training loop with sliders, toggles, graph, turbo mode, episode input, and finish-screen persistence
 - `requirements.txt` - project dependency list
 - `README.md` - setup and usage notes
 
@@ -40,9 +40,9 @@ Controls:
 python train.py --episodes 300
 ```
 
-The training dashboard now shows:
+The training dashboard shows:
 - the snake moving in real time
-- score, game number, epsilon, reward, and known states
+- score, run progress, epsilon, reward, and total learned games
 - the current action and whether it came from exploration or exploitation
 - the current Q-values for straight, right, and left
 - the 11-bit state representation the agent uses
@@ -50,22 +50,31 @@ The training dashboard now shows:
 - colored action arrows on the board
 - a live score / moving-average learning graph
 - live reward sliders so you can change the reward function while training
+- an editable `Episode goal` box so you can change how many games this run should play
+- a `Turbo` mode for much faster visible training
+- a `Keep open` option so the final dashboard stays on screen after training finishes
 
 ## Dashboard Controls
 
 Mouse controls:
-- Drag the `Training speed` slider to move between slow and fast modes
+- Drag the `Training speed` slider
 - Drag the reward sliders to change `food`, `death`, and `step` rewards
-- Click toggle buttons to turn overlays on or off
+- Click the toggle buttons to turn overlays on or off
+- Click the `Episode goal` box, type a number, and press `Enter`
 
 Keyboard shortcuts:
 - `Space` - pause or resume training
 - `A` - toggle action arrows
 - `D` - toggle danger squares
 - `G` - toggle the learning graph
+- `T` - toggle turbo mode
+- `K` - toggle whether the final dashboard stays open after training
 - `1` - slow mode
 - `2` - medium mode
 - `3` - fast mode
+- `4` - max turbo mode
+
+When `Keep open` is enabled, the dashboard stays visible after the final game and waits for `Enter`, `Q`, `Esc`, or the window close button.
 
 ## What the State Means
 
@@ -107,7 +116,7 @@ python train.py --episodes 100 --no-render
 
 Once you are comfortable with this version, useful next steps are:
 - add a button to reset the Q-table from the UI
-- save separate reward presets
-- compare different epsilon schedules
-- add plots for average reward per step
-- replace the Q-table with a neural network using PyTorch
+- add a step-by-step mode that advances one action at a time
+- show how the Q-value update is computed after each move
+- compare different reward presets side by side
+- add a heatmap of frequently visited states or board cells

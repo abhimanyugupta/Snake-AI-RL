@@ -98,35 +98,94 @@ class ToggleControl:
         }
 
 
+class TextInputControl:
+    """Small text box for entering numeric values in the dashboard."""
+
+    def __init__(self, label, value, x, y, width, height, max_length=6):
+        self.label = label
+        self.text = str(value)
+        self.rect = pygame.Rect(x, y, width, height)
+        self.max_length = max_length
+        self.active = False
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            was_active = self.active
+            self.active = self.rect.collidepoint(event.pos)
+            return was_active or self.active
+
+        if not self.active or event.type != pygame.KEYDOWN:
+            return False
+
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
+            self.active = False
+            return True
+
+        if event.key == pygame.K_BACKSPACE:
+            self.text = self.text[:-1]
+            return True
+
+        if event.unicode.isdigit() and len(self.text) < self.max_length:
+            self.text += event.unicode
+            return True
+
+        return False
+
+    def get_int(self, default=1, minimum=1, maximum=999999):
+        raw_value = self.text.strip()
+        if not raw_value:
+            return max(minimum, min(maximum, default))
+
+        value = int(raw_value)
+        return max(minimum, min(maximum, value))
+
+    def draw_data(self):
+        return {
+            "label": self.label,
+            "text": self.text,
+            "active": self.active,
+            "x": self.rect.x,
+            "y": self.rect.y,
+            "w": self.rect.width,
+            "h": self.rect.height,
+            "hint": "Type a number",
+        }
+
+
 class TrainingDashboard:
     """Owns the interactive controls and the learning history graph."""
 
-    def __init__(self, game, initial_speed, initial_delay_ms):
-        panel_x = game.board_w + 18
-        slider_width = game.sidebar_width - 40
+    def __init__(self, game, initial_speed, initial_delay_ms, initial_episode_goal):
+        panel_x = max(game.board_w + 18, 18)
+        slider_width = max(220, game.sidebar_width - 40)
 
         speed_ratio = self._speed_ratio_from_settings(initial_speed, initial_delay_ms)
         self.speed_slider = SliderControl(
-            "Training speed", 0.0, 1.0, speed_ratio, panel_x, 188, slider_width
+            "Training speed", 0.0, 1.0, speed_ratio, panel_x, 220, slider_width
         )
         self.food_reward_slider = SliderControl(
-            "Food reward", 1.0, 20.0, 10.0, panel_x, 232, slider_width
+            "Food reward", 1.0, 20.0, 10.0, panel_x, 264, slider_width
         )
         self.death_reward_slider = SliderControl(
-            "Death penalty", -20.0, -1.0, -10.0, panel_x, 276, slider_width
+            "Death penalty", -20.0, -1.0, -10.0, panel_x, 308, slider_width
         )
         self.step_reward_slider = SliderControl(
-            "Step reward", -1.0, 1.0, 0.0, panel_x, 320, slider_width
+            "Step reward", -1.0, 1.0, 0.0, panel_x, 352, slider_width
         )
 
-        self.show_arrows_toggle = ToggleControl("Arrows [A]", True, panel_x, 368, 150, 28)
+        self.show_arrows_toggle = ToggleControl("Arrows [A]", True, panel_x, 400, 150, 28)
         self.show_dangers_toggle = ToggleControl(
-            "Danger [D]", True, panel_x + 162, 368, 150, 28
+            "Danger [D]", True, panel_x + 162, 400, 150, 28
         )
-        self.show_graph_toggle = ToggleControl("Graph [G]", True, panel_x, 402, 150, 28)
+        self.show_graph_toggle = ToggleControl("Graph [G]", True, panel_x, 434, 150, 28)
         self.pause_toggle = ToggleControl(
-            "Pause [Space]", False, panel_x + 162, 402, 150, 28
+            "Pause [Space]", False, panel_x + 162, 434, 150, 28
         )
+        self.turbo_toggle = ToggleControl("Turbo [T]", False, panel_x, 468, 150, 28)
+        self.episode_input = TextInputControl(
+            "Episode goal", initial_episode_goal, panel_x + 162, 468, 150, 30
+        )
+        self.keep_open_toggle = ToggleControl("Keep open [K]", True, panel_x, 506, 312, 28)
 
         self.sliders = [
             self.speed_slider,
@@ -139,22 +198,39 @@ class TrainingDashboard:
             self.show_dangers_toggle,
             self.show_graph_toggle,
             self.pause_toggle,
+            self.turbo_toggle,
+            self.keep_open_toggle,
         ]
+        self.inputs = [self.episode_input]
 
+        self.initial_episode_goal = initial_episode_goal
         self.last_reward = 0.0
         self.score_history = []
         self.average_history = []
 
     @property
     def current_fps(self):
-        return int(5 + (self.speed_slider.value * 55))
+        if self.turbo_toggle.value:
+            return int(60 + (self.speed_slider.value * 300))
+        return int(5 + (self.speed_slider.value * 115))
 
     @property
     def current_delay_ms(self):
+        if self.turbo_toggle.value:
+            return 0
         return int((1.0 - self.speed_slider.value) * 140)
 
     @property
+    def render_every_n_steps(self):
+        if not self.turbo_toggle.value:
+            return 1
+        return 2 + int(self.speed_slider.value * 10)
+
+    @property
     def speed_mode_label(self):
+        if self.turbo_toggle.value:
+            return "Turbo"
+
         ratio = self.speed_slider.value
         if ratio < 0.34:
             return "Slow"
@@ -170,13 +246,30 @@ class TrainingDashboard:
             "step": round(self.step_reward_slider.value, 2),
         }
 
+    def get_episode_goal(self):
+        return self.episode_input.get_int(default=self.initial_episode_goal)
+
+    def should_draw_frame(self, step_number, force=False):
+        if force or not self.turbo_toggle.value:
+            return True
+        return step_number <= 1 or (step_number % self.render_every_n_steps == 0)
+
     def _speed_ratio_from_settings(self, speed, delay_ms):
-        speed_ratio = max(0.0, min(1.0, (speed - 5) / 55))
+        speed_ratio = max(0.0, min(1.0, (speed - 5) / 115))
         delay_ratio = 1.0 - max(0.0, min(1.0, delay_ms / 140 if delay_ms else 0.0))
         return round((speed_ratio + delay_ratio) / 2, 2)
 
     def handle_events(self, events):
         for event in events:
+            consumed_by_input = False
+            for input_control in self.inputs:
+                if input_control.handle_event(event):
+                    consumed_by_input = True
+                    break
+
+            if consumed_by_input:
+                continue
+
             if event.type == pygame.KEYDOWN:
                 self._handle_shortcuts(event.key)
 
@@ -197,12 +290,22 @@ class TrainingDashboard:
             self.show_dangers_toggle.toggle()
         elif key == pygame.K_g:
             self.show_graph_toggle.toggle()
+        elif key == pygame.K_t:
+            self.turbo_toggle.toggle()
+        elif key == pygame.K_k:
+            self.keep_open_toggle.toggle()
         elif key == pygame.K_1:
+            self.turbo_toggle.value = False
             self.speed_slider.set_normalized(0.15)
         elif key == pygame.K_2:
+            self.turbo_toggle.value = False
             self.speed_slider.set_normalized(0.5)
         elif key == pygame.K_3:
+            self.turbo_toggle.value = False
             self.speed_slider.set_normalized(0.9)
+        elif key == pygame.K_4:
+            self.turbo_toggle.value = True
+            self.speed_slider.set_normalized(1.0)
 
     def record_score(self, score):
         self.score_history.append(score)
@@ -217,7 +320,7 @@ class TrainingDashboard:
         state,
         action_info,
         current_game_number,
-        target_game_count,
+        episode_goal,
         best_score,
     ):
         candidate_points = game.get_relative_points()
@@ -230,29 +333,37 @@ class TrainingDashboard:
         danger_bits = " / ".join(str(bit) for bit in state[0:3])
         direction_bits = " / ".join(str(bit) for bit in state[3:7])
         food_bits = " / ".join(str(bit) for bit in state[7:11])
+        draw_mode = (
+            f"every {self.render_every_n_steps} steps"
+            if self.turbo_toggle.value
+            else f"{self.current_delay_ms} ms delay"
+        )
+        display_goal = max(episode_goal, current_game_number)
 
         return {
             "panel_title": "RL Training Dashboard",
             "metrics": [
-                ("Game", f"{current_game_number}/{target_game_count}"),
+                ("Run", f"{current_game_number}/{display_goal}"),
+                ("Total learned", agent.n_games),
                 ("Score", game.score),
+                ("Best score", best_score),
                 ("Epsilon", f"{agent.epsilon:.3f}"),
                 (
                     "Decision",
                     f"{action_info['action_label']} ({action_info['decision_type']})",
                 ),
                 ("Last reward", f"{self.last_reward:+.2f}"),
-                ("Known states", len(agent.q_table)),
             ],
             "sliders": [
                 self.speed_slider.draw_data(
-                    f"{self.speed_mode_label} | {self.current_fps} fps | {self.current_delay_ms} ms"
+                    f"{self.speed_mode_label} | {self.current_fps} fps | {draw_mode}"
                 ),
                 self.food_reward_slider.draw_data(f"{self.food_reward_slider.value:+.1f}"),
                 self.death_reward_slider.draw_data(f"{self.death_reward_slider.value:+.1f}"),
                 self.step_reward_slider.draw_data(f"{self.step_reward_slider.value:+.2f}"),
             ],
             "toggles": [toggle.draw_data() for toggle in self.toggles],
+            "inputs": [input_control.draw_data() for input_control in self.inputs],
             "show_arrows": self.show_arrows_toggle.value,
             "show_dangers": self.show_dangers_toggle.value,
             "show_graph": self.show_graph_toggle.value,
@@ -263,24 +374,50 @@ class TrainingDashboard:
             "decision_type": action_info["decision_type"],
             "candidate_points": candidate_points,
             "deadly_moves": deadly_moves,
-            "q_values_y": 446,
-            "state_y": 528,
-            "graph_y": 682,
-            "graph_h": 56,
+            "q_values_y": 552,
+            "graph_y": 628,
+            "graph_h": 92,
+            "state_y": 738,
             "state_lines": [
                 f"Tuple: {state_bits}",
-                f"Danger S/R/L: {danger_bits}",
-                f"Direction L/R/U/D: {direction_bits}",
+                f"Danger S/R/L: {danger_bits} | Dir L/R/U/D: {direction_bits}",
                 f"Food L/R/U/D: {food_bits}",
                 f"Food view: {agent.explain_food_view(state)}",
             ],
             "help_lines": [
                 "Model: Q-table dictionary, not a neural net.",
-                "Drag sliders or press 1/2/3 for speed.",
+                "Click Episode goal, then type a number.",
+                "1/2/3 = slow/med/fast, 4 or T = turbo.",
+                "K keeps the dashboard open after training.",
             ],
             "graph_scores": self.score_history[-60:],
             "graph_averages": self.average_history[-60:],
         }
+
+
+def hold_training_window_open(game):
+    """Keep the final dashboard visible until the user closes it."""
+    pygame.event.clear()  # flush stale events from training
+    final_view = dict(game.dashboard_data)
+    final_view["overlay_title"] = "Training finished"
+    final_view["overlay_subtitle"] = "Press Enter, Q, Esc, or close the window."
+    game.set_dashboard_data(final_view)
+
+    while not game.quit_requested:
+        events = pygame.event.get()
+        game.handle_system_events(events)
+
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key in (
+                pygame.K_RETURN,
+                pygame.K_KP_ENTER,
+                pygame.K_q,
+                pygame.K_ESCAPE,
+            ):
+                return
+
+        game.draw()
+        pygame.time.delay(30)
 
 
 def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
@@ -290,19 +427,28 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
         agent.load(model_path)
         print(f"Loaded saved model from {model_path}")
 
-    game = SnakeGameAI(w=640, h=740, render=render, speed=speed)
-    dashboard = TrainingDashboard(game, initial_speed=speed, initial_delay_ms=delay_ms)
+    game = SnakeGameAI(w=640, h=700, window_h=900, render=render, speed=speed)
+    dashboard = TrainingDashboard(
+        game,
+        initial_speed=speed,
+        initial_delay_ms=delay_ms,
+        initial_episode_goal=episodes,
+    )
     best_score = 0
-    target_game_count = agent.n_games + episodes
+    session_start_games = agent.n_games
+    training_completed = False
 
     try:
-        for _ in range(episodes):
+        while (agent.n_games - session_start_games) < dashboard.get_episode_goal():
             game.reset()
             dashboard.last_reward = 0.0
-            current_game_number = agent.n_games + 1
+            score = game.score
+            current_game_number = (agent.n_games - session_start_games) + 1
             state = agent.get_state(game)
+            step_count = 0
 
             while True:
+                episode_goal = dashboard.get_episode_goal()
                 events = pygame.event.get() if render else []
                 dashboard.handle_events(events)
                 game.handle_system_events(events)
@@ -322,7 +468,7 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                             state=state,
                             action_info=preview,
                             current_game_number=current_game_number,
-                            target_game_count=target_game_count,
+                            episode_goal=episode_goal,
                             best_score=best_score,
                         )
                     )
@@ -332,6 +478,7 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                     continue
 
                 action_info = agent.get_action_details(state)
+                step_count += 1
                 game.set_dashboard_data(
                     dashboard.build_dashboard_data(
                         agent=agent,
@@ -339,12 +486,12 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                         state=state,
                         action_info=action_info,
                         current_game_number=current_game_number,
-                        target_game_count=target_game_count,
+                        episode_goal=episode_goal,
                         best_score=best_score,
                     )
                 )
 
-                if render:
+                if render and dashboard.should_draw_frame(step_count):
                     game.draw()
                     if dashboard.current_delay_ms > 0:
                         pygame.time.delay(dashboard.current_delay_ms)
@@ -371,14 +518,17 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                         state=state,
                         action_info=action_info,
                         current_game_number=current_game_number,
-                        target_game_count=target_game_count,
+                        episode_goal=episode_goal,
                         best_score=best_score,
                     )
                     final_view["overlay_title"] = "Episode finished"
                     final_view["overlay_subtitle"] = f"Reward: {reward:+.2f}"
                     game.set_dashboard_data(final_view)
                     game.draw()
-                    pygame.time.delay(max(140, dashboard.current_delay_ms))
+                    if dashboard.turbo_toggle.value:
+                        pygame.time.delay(30)
+                    else:
+                        pygame.time.delay(max(100, dashboard.current_delay_ms))
 
                 if game.quit_requested or game_over:
                     break
@@ -392,8 +542,10 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
             agent.decay_epsilon()
             best_score = max(best_score, score)
 
+            completed_this_run = agent.n_games - session_start_games
             print(
-                f"Game {agent.n_games:>4} | "
+                f"Run {completed_this_run:>4}/{dashboard.get_episode_goal():<4} | "
+                f"Total games: {agent.n_games:>4} | "
                 f"Score: {score:>2} | "
                 f"Best: {best_score:>2} | "
                 f"Epsilon: {agent.epsilon:.3f} | "
@@ -403,8 +555,11 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
             if agent.n_games % save_every == 0 or score == best_score:
                 agent.save(model_path)
 
+        training_completed = not game.quit_requested
     finally:
         agent.save(model_path)
+        if render and training_completed and dashboard.keep_open_toggle.value:
+            hold_training_window_open(game)
         game.close()
 
     print(f"Training finished. Model saved to {model_path}")
@@ -472,4 +627,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
