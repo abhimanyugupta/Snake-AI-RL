@@ -156,36 +156,50 @@ class TrainingDashboard:
     """Owns the interactive controls and the learning history graph."""
 
     def __init__(self, game, initial_speed, initial_delay_ms, initial_episode_goal):
-        panel_x = max(game.board_w + 18, 18)
-        slider_width = max(220, game.sidebar_width - 40)
-
+        padding = 20
+        # Title takes ~46px (font size 26 + 20)
+        # Metrics take ~26*7 + 15 = 197px
+        # We start controls after metrics in the left column
+        start_y = padding + 46 + 197 + 15
+        
+        col_w = (game.sidebar_width - (padding * 2) - 20) // 2
+        col_x = game.board_w + padding
+        
+        slider_width = col_w
+        
+        y = start_y
         speed_ratio = self._speed_ratio_from_settings(initial_speed, initial_delay_ms)
         self.speed_slider = SliderControl(
-            "Training speed", 0.0, 1.0, speed_ratio, panel_x, 220, slider_width
+            "Training speed", 0.0, 1.0, speed_ratio, col_x, y, slider_width
         )
+        y += 44
         self.food_reward_slider = SliderControl(
-            "Food reward", 1.0, 20.0, 10.0, panel_x, 264, slider_width
+            "Food reward", 1.0, 20.0, 10.0, col_x, y, slider_width
         )
+        y += 44
         self.death_reward_slider = SliderControl(
-            "Death penalty", -20.0, -1.0, -10.0, panel_x, 308, slider_width
+            "Death penalty", -20.0, -1.0, -10.0, col_x, y, slider_width
         )
+        y += 44
         self.step_reward_slider = SliderControl(
-            "Step reward", -1.0, 1.0, 0.0, panel_x, 352, slider_width
+            "Step reward", -1.0, 1.0, 0.0, col_x, y, slider_width
         )
-
-        self.show_arrows_toggle = ToggleControl("Arrows [A]", True, panel_x, 400, 150, 28)
-        self.show_dangers_toggle = ToggleControl(
-            "Danger [D]", True, panel_x + 162, 400, 150, 28
-        )
-        self.show_graph_toggle = ToggleControl("Graph [G]", True, panel_x, 434, 150, 28)
-        self.pause_toggle = ToggleControl(
-            "Pause [Space]", False, panel_x + 162, 434, 150, 28
-        )
-        self.turbo_toggle = ToggleControl("Turbo [T]", False, panel_x, 468, 150, 28)
-        self.episode_input = TextInputControl(
-            "Episode goal", initial_episode_goal, panel_x + 162, 468, 150, 30
-        )
-        self.keep_open_toggle = ToggleControl("Keep open [K]", True, panel_x, 506, 312, 28)
+        
+        y += 50
+        toggle_w = (col_w - 10) // 2
+        self.show_arrows_toggle = ToggleControl("Arrows [A]", True, col_x, y, toggle_w, 28)
+        self.show_dangers_toggle = ToggleControl("Danger [D]", True, col_x + toggle_w + 10, y, toggle_w, 28)
+        
+        y += 36
+        self.show_graph_toggle = ToggleControl("Graph [G]", True, col_x, y, toggle_w, 28)
+        self.pause_toggle = ToggleControl("Pause [Space]", False, col_x + toggle_w + 10, y, toggle_w, 28)
+        
+        y += 36
+        self.turbo_toggle = ToggleControl("Turbo [T]", False, col_x, y, toggle_w, 28)
+        self.episode_input = TextInputControl("Episode goal", initial_episode_goal, col_x + toggle_w + 10, y, toggle_w, 30)
+        
+        y += 38
+        self.keep_open_toggle = ToggleControl("Keep open [K]", True, col_x, y, col_w, 28)
 
         self.sliders = [
             self.speed_slider,
@@ -374,21 +388,18 @@ class TrainingDashboard:
             "decision_type": action_info["decision_type"],
             "candidate_points": candidate_points,
             "deadly_moves": deadly_moves,
-            "q_values_y": 552,
-            "graph_y": 628,
-            "graph_h": 92,
-            "state_y": 738,
             "state_lines": [
                 f"Tuple: {state_bits}",
-                f"Danger S/R/L: {danger_bits} | Dir L/R/U/D: {direction_bits}",
-                f"Food L/R/U/D: {food_bits}",
+                f"Danger (S/R/L): {danger_bits}",
+                f"Direction (L/R/U/D): {direction_bits}",
+                f"Food (L/R/U/D): {food_bits}",
                 f"Food view: {agent.explain_food_view(state)}",
             ],
             "help_lines": [
-                "Model: Q-table dictionary, not a neural net.",
-                "Click Episode goal, then type a number.",
-                "1/2/3 = slow/med/fast, 4 or T = turbo.",
-                "K keeps the dashboard open after training.",
+                "Model: Q-table dict, not neural net.",
+                "Click Editor goal to change target.",
+                "1/2/3 = slow/med/fast, 4/T = turbo.",
+                "K keeps window open after training.",
             ],
             "graph_scores": self.score_history[-60:],
             "graph_averages": self.average_history[-60:],

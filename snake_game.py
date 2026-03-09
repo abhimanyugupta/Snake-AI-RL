@@ -29,7 +29,7 @@ class SnakeGameAI:
         block_size=20,
         speed=12,
         render=True,
-        sidebar_width=360,
+        sidebar_width=680,
         window_h=None,
     ):
         pygame.init()
@@ -382,12 +382,36 @@ class SnakeGameAI:
         data = self.dashboard_data
         panel_x = self.board_w
         panel_rect = pygame.Rect(panel_x, 0, self.sidebar_width, self.window_h)
-        pygame.draw.rect(self.display, (27, 27, 31), panel_rect)
-        pygame.draw.line(self.display, (70, 70, 80), (panel_x, 0), (panel_x, self.window_h), 2)
+        
+        # Premium background gradient effect (simulated with slightly lighter top)
+        pygame.draw.rect(self.display, (22, 23, 28), panel_rect)
+        top_glow = pygame.Rect(panel_x, 0, self.sidebar_width, 100)
+        # We can't easily draw true gradients in raw pygame without surfaces, but we can do a solid color 
+        # that looks a bit richer. Let's stick to a solid premium dark color and use borders to define shape.
+        
+        # Draw a subtle separator line with a shadow effect
+        pygame.draw.line(self.display, (15, 15, 18), (panel_x - 1, 0), (panel_x - 1, self.window_h), 2)
+        pygame.draw.line(self.display, (45, 48, 56), (panel_x, 0), (panel_x, self.window_h), 1)
 
+        # Setup 2-column grid layout
+        padding = 20
+        col_gap = 20
+        col_w = (self.sidebar_width - (padding * 2) - col_gap) // 2
+        
+        left_col = pygame.Rect(panel_x + padding, padding, col_w, self.window_h - padding * 2)
+        right_col = pygame.Rect(panel_x + padding + col_w + col_gap, padding, col_w, self.window_h - padding * 2)
+
+        # Title
         title = data.get("panel_title", "Snake Dashboard")
-        title_surface = self.title_font.render(title, True, (245, 245, 245))
-        self.display.blit(title_surface, (panel_x + 18, 14))
+        title_surface = self.title_font.render(title, True, (250, 252, 255))
+        self.display.blit(title_surface, (left_col.x, left_col.y))
+        
+        # Move y down for both columns after title
+        title_h = title_surface.get_height() + 20
+        left_col.y += title_h
+        left_col.height -= title_h
+        right_col.y += title_h
+        right_col.height -= title_h
 
         if not data:
             manual_lines = [
@@ -397,30 +421,67 @@ class SnakeGameAI:
                 "Model: Q-table dictionary.",
             ]
             for index, line in enumerate(manual_lines):
-                surface = self.small_font.render(line, True, (220, 220, 220))
-                self.display.blit(surface, (panel_x + 18, 60 + index * 24))
+                surface = self.small_font.render(line, True, (200, 205, 215))
+                self.display.blit(surface, (left_col.x, left_col.y + index * 28))
             return
 
-        metrics_y = 54
+        # --- LEFT COLUMN: Metrics -> Controls ---
+        # Draw Metrics Card
+        metrics_h = len(data.get("metrics", [])) * 26 + 15
+        metrics_rect = pygame.Rect(left_col.x, left_col.y, left_col.width, metrics_h)
+        self._draw_card_background(metrics_rect)
+        
+        metrics_y = metrics_rect.y + 10
         for label, value in data.get("metrics", []):
             line = f"{label}: {value}"
-            surface = self.small_font.render(line, True, (225, 225, 225))
-            self.display.blit(surface, (panel_x + 18, metrics_y))
-            metrics_y += 22
+            # Make label slightly dimmer than value for premium look
+            label_surf = self.small_font.render(f"{label}:", True, (160, 165, 175))
+            val_surf = self.small_font.render(str(value), True, (240, 245, 255))
+            self.display.blit(label_surf, (metrics_rect.x + 12, metrics_y))
+            self.display.blit(val_surf, (metrics_rect.x + 12 + label_surf.get_width() + 6, metrics_y))
+            metrics_y += 24
+            
+        left_col.y += metrics_h + 15
+        left_col.height -= (metrics_h + 15)
 
-        self._draw_controls(panel_x + 18, data)
+        # Draw Controls (will render themselves relative to their data dicts)
+        self._draw_controls(data)
+
+        # --- RIGHT COLUMN: Q-Values -> Graph -> State ---
+        # Q-Values
+        q_h = 130
+        q_rect = pygame.Rect(right_col.x, right_col.y, right_col.width, q_h)
         if data.get("q_values") is not None:
-            self._draw_q_values(panel_x + 18, data)
-        self._draw_graph(panel_x + 18, data)
+            self._draw_q_values(q_rect, data)
+            
+        right_col.y += q_h + 15
+        right_col.height -= (q_h + 15)
+            
+        # Graph
+        graph_h = 240
+        graph_rect = pygame.Rect(right_col.x, right_col.y, right_col.width, graph_h)
+        self._draw_graph(graph_rect, data)
+        
+        right_col.y += graph_h + 15
+        right_col.height -= (graph_h + 15)
+        
+        # State block - takes remaining space
         if data.get("state_lines"):
-            self._draw_state_block(panel_x + 18, data)
+            self._draw_state_block(right_col, data)
 
-    def _draw_controls(self, panel_x, data):
+    def _draw_card_background(self, rect):
+        """Draw a premium dark card with subtle borders."""
+        pygame.draw.rect(self.display, (30, 32, 38), rect, border_radius=8)
+        pygame.draw.rect(self.display, (55, 60, 70), rect, width=1, border_radius=8)
+        # Subtle drop shadow at bottom
+        pygame.draw.line(self.display, (15, 16, 20), (rect.x + 4, rect.bottom), (rect.right - 4, rect.bottom), 2)
+
+    def _draw_controls(self, data):
         for slider in data.get("sliders", []):
             label_surface = self.tiny_font.render(
                 f"{slider['label']}: {slider['value_text']}",
                 True,
-                (235, 235, 235),
+                (210, 215, 225),
             )
             self.display.blit(label_surface, (slider["x"], slider["y"]))
 
@@ -430,44 +491,63 @@ class SnakeGameAI:
             fill_w = max(0, min(track_rect.width, int(track_rect.width * slider["ratio"])))
             fill_rect = pygame.Rect(track_rect.x, track_rect.y, fill_w, track_rect.height)
 
-            pygame.draw.rect(self.display, (60, 64, 72), track_rect, border_radius=5)
-            pygame.draw.rect(self.display, (87, 200, 255), fill_rect, border_radius=5)
-            pygame.draw.circle(
-                self.display,
-                (245, 245, 245),
-                (slider["knob_x"], slider["knob_y"]),
-                slider["knob_radius"],
-            )
+            # Premium slider track
+            pygame.draw.rect(self.display, (45, 48, 55), track_rect, border_radius=6)
+            pygame.draw.rect(self.display, (30, 32, 36), track_rect, width=1, border_radius=6)
+            
+            # Premium slider fill (gradient-like via inner rect, but solid for now)
+            pygame.draw.rect(self.display, (80, 190, 255), fill_rect, border_radius=6)
+            
+            # Premium knob (larger, layered for glow effect)
+            knob_center = (slider["knob_x"], slider["knob_y"])
+            pygame.draw.circle(self.display, (40, 140, 220), knob_center, slider["knob_radius"] + 2)
+            pygame.draw.circle(self.display, (250, 252, 255), knob_center, slider["knob_radius"])
 
         for toggle in data.get("toggles", []):
             rect = pygame.Rect(toggle["x"], toggle["y"], toggle["w"], toggle["h"])
-            color = (78, 196, 111) if toggle["value"] else (70, 70, 80)
-            pygame.draw.rect(self.display, color, rect, border_radius=8)
-            pygame.draw.rect(self.display, (25, 25, 30), rect, width=1, border_radius=8)
+            # Premium toggle buttons
+            base_color = (65, 180, 100) if toggle["value"] else (50, 52, 60)
+            hover_color = (80, 200, 115) if toggle["value"] else (60, 62, 70)
+            border_color = (45, 140, 75) if toggle["value"] else (40, 42, 48)
+            
+            pygame.draw.rect(self.display, base_color, rect, border_radius=6)
+            pygame.draw.rect(self.display, border_color, rect, width=2, border_radius=6)
 
-            label_surface = self.tiny_font.render(toggle["label"], True, (245, 245, 245))
-            self.display.blit(label_surface, (rect.x + 8, rect.y + 6))
+            text_color = (255, 255, 255) if toggle["value"] else (180, 185, 195)
+            label_surface = self.tiny_font.render(toggle["label"], True, text_color)
+            # Center text in rect
+            text_rect = label_surface.get_rect(center=rect.center)
+            self.display.blit(label_surface, text_rect)
 
         for input_box in data.get("inputs", []):
-            label_surface = self.tiny_font.render(input_box["label"], True, (235, 235, 235))
-            self.display.blit(label_surface, (input_box["x"], input_box["y"] - 18))
+            label_surface = self.tiny_font.render(input_box["label"], True, (210, 215, 225))
+            self.display.blit(label_surface, (input_box["x"], input_box["y"] - 20))
 
             rect = pygame.Rect(input_box["x"], input_box["y"], input_box["w"], input_box["h"])
-            fill_color = (42, 46, 58) if input_box.get("active") else (30, 33, 41)
-            border_color = (100, 210, 255) if input_box.get("active") else (85, 85, 95)
-            pygame.draw.rect(self.display, fill_color, rect, border_radius=8)
-            pygame.draw.rect(self.display, border_color, rect, width=2, border_radius=8)
+            # Premium text input
+            fill_color = (20, 22, 26) if input_box.get("active") else (28, 30, 36)
+            border_color = (100, 210, 255) if input_box.get("active") else (60, 65, 75)
+            pygame.draw.rect(self.display, fill_color, rect, border_radius=6)
+            pygame.draw.rect(self.display, border_color, rect, width=2, border_radius=6)
 
             value_text = input_box.get("text") or input_box.get("hint", "")
-            value_color = (245, 245, 245) if input_box.get("text") else (140, 140, 150)
+            value_color = (250, 252, 255) if input_box.get("text") else (120, 125, 135)
             value_surface = self.small_font.render(value_text, True, value_color)
-            self.display.blit(value_surface, (rect.x + 8, rect.y + 5))
+            
+            # Simple cursor blink effect
+            if input_box.get("active") and pygame.time.get_ticks() % 1000 < 500:
+                cursor_x = rect.x + 10 + value_surface.get_width()
+                pygame.draw.line(self.display, (250, 252, 255), (cursor_x, rect.y + 6), (cursor_x, rect.bottom - 6), 2)
+            
+            self.display.blit(value_surface, (rect.x + 10, rect.y + 4))
 
-    def _draw_q_values(self, panel_x, data):
-        y = data.get("q_values_y", 350)
-        heading = self.small_font.render("Q-values and policy", True, (245, 245, 245))
-        self.display.blit(heading, (panel_x, y))
-        y += 24
+    def _draw_q_values(self, rect, data):
+        self._draw_card_background(rect)
+        
+        y = rect.y + 12
+        heading = self.small_font.render("Q-Values & Policy", True, (250, 252, 255))
+        self.display.blit(heading, (rect.x + 12, y))
+        y += 28
 
         q_values = data.get("q_values", [0.0, 0.0, 0.0])
         action_labels = data.get("action_labels", ["Straight", "Right", "Left"])
@@ -475,74 +555,91 @@ class SnakeGameAI:
         decision_type = data.get("decision_type", "")
 
         max_abs = max(1.0, max(abs(value) for value in q_values))
+        
+        # Calculate layut dynamically to fit rect
+        label_w = 60
+        val_w = 45
+        bar_x = rect.x + 12 + label_w
+        bar_w = rect.width - 24 - label_w - val_w
+        
         for index, label in enumerate(action_labels):
-            bar_y = y + index * 22
-            bar_x = panel_x + 95
-            bar_w = 170
+            bar_y = y + index * 26
             value = q_values[index]
             fill_w = int((abs(value) / max_abs) * bar_w)
-            color = (95, 236, 124) if value >= 0 else (255, 110, 110)
+            
+            # Premium colors
+            color = (80, 230, 120) if value >= 0 else (255, 100, 100)
             if index == action_index:
-                color = (255, 196, 68) if decision_type == "explore" else color
+                color = (255, 190, 60) if decision_type == "explore" else color
                 if decision_type == "policy preview":
-                    color = (120, 210, 255)
+                    color = (100, 200, 255)
 
-            label_surface = self.tiny_font.render(label, True, (220, 220, 220))
-            self.display.blit(label_surface, (panel_x, bar_y + 2))
-            pygame.draw.rect(self.display, (58, 58, 68), (bar_x, bar_y + 4, bar_w, 12), border_radius=6)
-            pygame.draw.rect(self.display, color, (bar_x, bar_y + 4, fill_w, 12), border_radius=6)
+            label_surface = self.tiny_font.render(label, True, (200, 205, 215))
+            self.display.blit(label_surface, (rect.x + 12, bar_y + 2))
+            
+            # Track
+            pygame.draw.rect(self.display, (20, 22, 26), (bar_x, bar_y + 6, bar_w, 10), border_radius=5)
+            # Fill
+            pygame.draw.rect(self.display, color, (bar_x, bar_y + 6, fill_w, 10), border_radius=5)
 
-            value_surface = self.tiny_font.render(f"{value:.2f}", True, (235, 235, 235))
-            self.display.blit(value_surface, (bar_x + bar_w + 8, bar_y + 1))
+            value_surface = self.tiny_font.render(f"{value:.2f}", True, (240, 245, 255))
+            self.display.blit(value_surface, (bar_x + bar_w + 8, bar_y + 2))
 
-    def _draw_state_block(self, panel_x, data):
-        y = data.get("state_y", 424)
-        heading = self.small_font.render("State representation", True, (245, 245, 245))
-        self.display.blit(heading, (panel_x, y))
-        y += 22
+    def _draw_state_block(self, rect, data):
+        self._draw_card_background(rect)
+        
+        y = rect.y + 12
+        heading = self.small_font.render("State Representation", True, (250, 252, 255))
+        self.display.blit(heading, (rect.x + 12, y))
+        y += 26
 
         for line in data.get("state_lines", []):
-            surface = self.tiny_font.render(line, True, (215, 215, 220))
-            self.display.blit(surface, (panel_x, y))
+            surface = self.tiny_font.render(line, True, (190, 195, 205))
+            self.display.blit(surface, (rect.x + 12, y))
+            y += 20
+
+        y += 10
+        for line in data.get("help_lines", []):
+            surface = self.tiny_font.render(line, True, (130, 200, 255))
+            self.display.blit(surface, (rect.x + 12, y))
             y += 18
 
-        for line in data.get("help_lines", []):
-            surface = self.tiny_font.render(line, True, (160, 200, 255))
-            self.display.blit(surface, (panel_x, y))
-            y += 17
-
-    def _draw_graph(self, panel_x, data):
+    def _draw_graph(self, rect, data):
         if not data.get("show_graph"):
             return
 
-        graph_y = data.get("graph_y", self.window_h - 110)
-        graph_h = data.get("graph_h", 90)
-        graph_rect = pygame.Rect(panel_x, graph_y, self.sidebar_width - 36, graph_h)
-        pygame.draw.rect(self.display, (34, 34, 40), graph_rect, border_radius=10)
-        pygame.draw.rect(self.display, (70, 70, 80), graph_rect, width=1, border_radius=10)
+        self._draw_card_background(rect)
 
-        title = self.tiny_font.render("Learning graph: score and moving average", True, (230, 230, 230))
-        self.display.blit(title, (graph_rect.x + 8, graph_rect.y + 6))
+        title = self.tiny_font.render("Learning Graph: Score & Moving Avg", True, (250, 252, 255))
+        self.display.blit(title, (rect.x + 12, rect.y + 12))
 
         scores = data.get("graph_scores", [])
         averages = data.get("graph_averages", [])
         if len(scores) < 2:
+            no_data = self.tiny_font.render("Waiting for data...", True, (120, 125, 135))
+            self.display.blit(no_data, (rect.x + 12, rect.y + 40))
             return
 
-        plot_rect = pygame.Rect(graph_rect.x + 8, graph_rect.y + 24, graph_rect.width - 16, graph_rect.height - 32)
+        plot_rect = pygame.Rect(rect.x + 15, rect.y + 35, rect.width - 30, rect.height - 50)
+        
+        # Plot area background
+        pygame.draw.rect(self.display, (20, 22, 26), plot_rect, border_radius=4)
+        pygame.draw.rect(self.display, (40, 42, 48), plot_rect, width=1, border_radius=4)
+        
+        # Baseline
         pygame.draw.line(
             self.display,
-            (90, 90, 100),
+            (60, 65, 75),
             (plot_rect.x, plot_rect.bottom),
             (plot_rect.right, plot_rect.bottom),
             1,
         )
 
         max_value = max(max(scores), max(averages), 1)
-        self._draw_graph_line(plot_rect, scores, max_value, (120, 200, 255))
-        self._draw_graph_line(plot_rect, averages, max_value, (120, 255, 150))
+        self._draw_graph_line(plot_rect, scores, max_value, (80, 190, 255), thickness=2)
+        self._draw_graph_line(plot_rect, averages, max_value, (80, 230, 120), thickness=3)
 
-    def _draw_graph_line(self, rect, values, max_value, color):
+    def _draw_graph_line(self, rect, values, max_value, color, thickness=2):
         if len(values) < 2:
             return
 
@@ -552,10 +649,14 @@ class SnakeGameAI:
             ratio_y = 0 if max_value == 0 else value / max_value
             x = rect.x + int(ratio_x * rect.width)
             y = rect.bottom - int(ratio_y * rect.height)
+            
+            # Keep inside plot area
+            y = max(rect.top, min(rect.bottom, y))
             points.append((x, y))
 
         if len(points) >= 2:
-            pygame.draw.lines(self.display, color, False, points, 2)
+            # Draw premium smoothed line
+            pygame.draw.lines(self.display, color, False, points, thickness)
 
     def _draw_overlay_message(self):
         title = self.dashboard_data.get("overlay_title")
