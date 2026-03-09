@@ -450,7 +450,11 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
     training_completed = False
 
     try:
-        while (agent.n_games - session_start_games) < dashboard.get_episode_goal():
+        while True:
+            # Check if we've reached the user-adjustable goal
+            current_goal = dashboard.get_episode_goal()
+            if (agent.n_games - session_start_games) >= current_goal:
+                break
             game.reset()
             dashboard.last_reward = 0.0
             score = game.score

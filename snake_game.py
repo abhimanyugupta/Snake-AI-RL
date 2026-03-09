@@ -56,12 +56,18 @@ class SnakeGameAI:
             self.font = pygame.font.SysFont("arial", 20)
             self.small_font = pygame.font.SysFont("arial", 16)
             self.tiny_font = pygame.font.SysFont("arial", 14)
+            # Pre-allocate reusable alpha surfaces to avoid per-frame allocation
+            self._overlay_surface = pygame.Surface((self.board_w, self.board_h), pygame.SRCALPHA)
+            glow_size = self.block_size * 3
+            self._glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
         else:
             self.display = None
             self.title_font = None
             self.font = None
             self.small_font = None
             self.tiny_font = None
+            self._overlay_surface = None
+            self._glow_surface = None
 
         self.clock = pygame.time.Clock()
         self.reset()
@@ -278,32 +284,99 @@ class SnakeGameAI:
 
     def _draw_board_background(self):
         board_rect = pygame.Rect(0, 0, self.board_w, self.board_h)
-        pygame.draw.rect(self.display, (24, 32, 24), board_rect)
+        # Deep space premium navy/slate background
+        pygame.draw.rect(self.display, (16, 18, 24), board_rect)
 
+        # Subtle grid lines
         for x in range(0, self.board_w, self.block_size):
-            pygame.draw.line(self.display, (36, 48, 36), (x, 0), (x, self.board_h), 1)
+            pygame.draw.line(self.display, (28, 32, 40), (x, 0), (x, self.board_h), 1)
         for y in range(0, self.board_h, self.block_size):
-            pygame.draw.line(self.display, (36, 48, 36), (0, y), (self.board_w, y), 1)
+            pygame.draw.line(self.display, (28, 32, 40), (0, y), (self.board_w, y), 1)
 
-        pygame.draw.rect(self.display, (70, 90, 70), board_rect, width=2)
+        # Premium outer board border
+        pygame.draw.rect(self.display, (50, 60, 80), board_rect, width=2)
+        pygame.draw.rect(self.display, (35, 45, 60), board_rect.inflate(4, 4), width=2)
 
     def _draw_snake_and_food(self):
-        food_rect = pygame.Rect(self.food.x, self.food.y, self.block_size, self.block_size)
-        pygame.draw.rect(self.display, (231, 76, 60), food_rect, border_radius=5)
-        pygame.draw.rect(self.display, (120, 30, 30), food_rect, width=2, border_radius=5)
+        # --- Draw Premium Food (Pulsing Glow) ---
+        pulse = (math.sin(pygame.time.get_ticks() / 200.0) + 1) / 2  # 0 to 1
+        food_center = (self.food.x + self.block_size // 2, self.food.y + self.block_size // 2)
+        
+        # Glow effect (only drawn if not in turbo mode to save FPS)
+        toggles = self.dashboard_data.get("toggles", []) if self.dashboard_data else []
+        is_turbo = toggles[4].get("value", False) if len(toggles) > 4 else False
+        if not is_turbo and self._glow_surface is not None:
+            self._glow_surface.fill((0, 0, 0, 0))  # Clear cached surface
+            glow_radius = int(self.block_size * 0.8 + pulse * self.block_size * 0.4)
+            pygame.draw.circle(self._glow_surface, (255, 60, 60, 40 + int(pulse * 30)), (self.block_size * 1.5, self.block_size * 1.5), glow_radius)
+            self.display.blit(self._glow_surface, (self.food.x - self.block_size, self.food.y - self.block_size))
 
-        for index, part in enumerate(self.snake):
-            body_color = (79, 220, 130) if index == 0 else (46, 175, 99)
+        # Core food apple
+        food_rect = pygame.Rect(self.food.x, self.food.y, self.block_size, self.block_size)
+        pygame.draw.rect(self.display, (255, 70, 70), food_rect, border_radius=self.block_size // 2)
+        pygame.draw.rect(self.display, (255, 180, 180), food_rect.inflate(-8, -8), border_radius=self.block_size // 2)
+
+        # --- Draw Premium Snake (Gradients & Joints) ---
+        n = len(self.snake)
+        for index, part in enumerate(reversed(self.snake)):
+            # Reversed so head is drawn last and on top
+            true_idx = n - 1 - index
+            
+            # Gradient: Head is bright neon green/cyan, tail is dark teal
+            ratio = true_idx / max(1, n - 1)
+            r = int(50 * (1 - ratio) + 20 * ratio)
+            g = int(240 * (1 - ratio) + 120 * ratio)
+            b = int(140 * (1 - ratio) + 180 * ratio)
+            color = (r, g, b)
+            
             rect = pygame.Rect(part.x, part.y, self.block_size, self.block_size)
-            pygame.draw.rect(self.display, body_color, rect, border_radius=5)
-            pygame.draw.rect(self.display, (12, 70, 32), rect, width=2, border_radius=5)
+            
+            if true_idx == 0:
+                # Head
+                pygame.draw.rect(self.display, (255, 255, 255), rect, border_radius=6)
+                pygame.draw.rect(self.display, color, rect.inflate(-4, -4), border_radius=4)
+                
+                # Draw Eyes
+                eye_color = (20, 20, 30)
+                cx, cy = part.x + self.block_size // 2, part.y + self.block_size // 2
+                offset = 4
+                if self.direction == Direction.RIGHT:
+                    pygame.draw.circle(self.display, eye_color, (cx + offset, cy - offset), 2)
+                    pygame.draw.circle(self.display, eye_color, (cx + offset, cy + offset), 2)
+                elif self.direction == Direction.LEFT:
+                    pygame.draw.circle(self.display, eye_color, (cx - offset, cy - offset), 2)
+                    pygame.draw.circle(self.display, eye_color, (cx - offset, cy + offset), 2)
+                elif self.direction == Direction.UP:
+                    pygame.draw.circle(self.display, eye_color, (cx - offset, cy - offset), 2)
+                    pygame.draw.circle(self.display, eye_color, (cx + offset, cy - offset), 2)
+                elif self.direction == Direction.DOWN:
+                    pygame.draw.circle(self.display, eye_color, (cx - offset, cy + offset), 2)
+                    pygame.draw.circle(self.display, eye_color, (cx + offset, cy + offset), 2)
+                    
+            else:
+                # Body segment
+                pygame.draw.rect(self.display, color, rect.inflate(-2, -2), border_radius=4)
+                
+            # Connect the joints with a circle for a continuous tube look
+            if true_idx > 0:
+                prev_part = self.snake[true_idx - 1]
+                joint_x = (part.x + prev_part.x) // 2 + self.block_size // 2
+                joint_y = (part.y + prev_part.y) // 2 + self.block_size // 2
+                
+                # Use the color of the segment closer to the head for the joint
+                joint_ratio = (true_idx - 0.5) / max(1, n - 1)
+                jr = int(50 * (1 - joint_ratio) + 20 * joint_ratio)
+                jg = int(240 * (1 - joint_ratio) + 120 * joint_ratio)
+                jb = int(140 * (1 - joint_ratio) + 180 * joint_ratio)
+                
+                pygame.draw.circle(self.display, (jr, jg, jb), (joint_x, joint_y), self.block_size // 2 - 1)
 
     def _draw_danger_overlays(self):
         data = self.dashboard_data
-        if not data or not data.get("show_dangers"):
+        if not data or not data.get("show_dangers") or self._overlay_surface is None:
             return
 
-        overlay = pygame.Surface((self.board_w, self.board_h), pygame.SRCALPHA)
+        self._overlay_surface.fill((0, 0, 0, 0))  # Clear cached surface
         candidate_points = data.get("candidate_points", {})
         deadly_moves = data.get("deadly_moves", {})
 
@@ -313,13 +386,13 @@ class SnakeGameAI:
 
             draw_point = self._clamp_point_to_board(point)
             rect = pygame.Rect(draw_point.x, draw_point.y, self.block_size, self.block_size)
-            pygame.draw.rect(overlay, (220, 70, 70, 130), rect, border_radius=5)
-            pygame.draw.rect(overlay, (255, 180, 180, 180), rect, width=2, border_radius=5)
+            pygame.draw.rect(self._overlay_surface, (220, 70, 70, 130), rect, border_radius=5)
+            pygame.draw.rect(self._overlay_surface, (255, 180, 180, 180), rect, width=2, border_radius=5)
 
             label_surface = self.small_font.render(key[0].upper(), True, (255, 255, 255))
-            overlay.blit(label_surface, (rect.x + 4, rect.y + 2))
+            self._overlay_surface.blit(label_surface, (rect.x + 4, rect.y + 2))
 
-        self.display.blit(overlay, (0, 0))
+        self.display.blit(self._overlay_surface, (0, 0))
 
     def _draw_action_arrows(self):
         data = self.dashboard_data
