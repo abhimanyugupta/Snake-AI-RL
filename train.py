@@ -200,7 +200,7 @@ class TrainingDashboard:
         
         y += 38
         self.keep_open_toggle = ToggleControl("Keep open [K]", True, col_x, y, toggle_w, 28)
-        self.headless_toggle = ToggleControl("Headless [H]", False, col_x + toggle_w + 10, y, toggle_w, 28)
+        self.headless_toggle = ToggleControl("No Render [H]", False, col_x + toggle_w + 10, y, toggle_w, 28)
 
         self.sliders = [
             self.speed_slider,
@@ -575,7 +575,7 @@ def train(episodes, render, speed, delay_ms, model_path, resume, save_every):
                 if game.quit_requested:
                     break
 
-                game.speed = dashboard.current_fps
+                game.speed = 0 if dashboard.headless_toggle.value else dashboard.current_fps
                 game.set_reward_config(dashboard.reward_config)
 
                 if dashboard.pause_toggle.value:
